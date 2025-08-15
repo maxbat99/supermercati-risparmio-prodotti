@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="it">
 <head>
 <meta charset="utf-8" />
@@ -376,6 +376,25 @@
       <div id="mBody" class="muted"></div>
     </div>
   </div>
+<script>
+(function(){
+  try {
+    window.API_BASE = "https://supermercati-risparmio-prodotti.onrender.com";
+    try { localStorage.setItem("PUBLIC_API_BASE", "https://supermercati-risparmio-prodotti.onrender.com"); } catch(e) {}
+    function start(){ 
+      try { if (typeof bootstrap==='function') bootstrap(); } catch(e){}
+      try { if (typeof searchNow==='function') searchNow(); else if (typeof searchOffers==='function') searchOffers(1); } catch(e){}
+      var badge=document.createElement('div');
+      badge.style="position:fixed;bottom:10px;left:10px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:6px 10px;font:12px system-ui;color:#111;z-index:9999";
+      badge.textContent="API: https://supermercati-risparmio-prodotti.onrender.com";
+      document.body.appendChild(badge);
+      setTimeout(()=>badge.remove(),4000);
+    }
+    if(document.readyState!=='loading') start();
+    else window.addEventListener('DOMContentLoaded', start);
+  } catch(e){ console.error('Auto-connect error', e); }
+})();
+</script>
 </body>
 </html>
 
