@@ -33,7 +33,9 @@
 </style>
 <script>
   // ===== CONFIG =====
-  let API_BASE = "https://supermercati-risparmio-prodotti.onrender.com";      // verrà rilevata o impostata dall'utente
+  let API_BASE = (location.hostname === "127.0.0.1" || location.hostname === "localhost")
+  ? "http://127.0.0.1:8000"
+  : "https://supermercati-risparmio-prodotti.onrender.com";      // verrà rilevata o impostata dall'utente
   const $ = (id)=>document.getElementById(id);
   const € = (n)=>"€"+Number(n||0).toFixed(2);
   const norm = (s)=>(s||"").toLowerCase().replace(/\s+/g," ").trim();
@@ -376,6 +378,7 @@
   </div>
 </body>
 </html>
+
 
 
 
