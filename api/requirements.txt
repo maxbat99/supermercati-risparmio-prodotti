@@ -1,0 +1,13 @@
+﻿fastapi
+uvicorn[standard]
+pydantic
+python-multipart
+requests
+beautifulsoup4
+lxml
+playwright
+pdf2image
+pytesseract
+Pillow
+rapidfuzz
+PyYAML

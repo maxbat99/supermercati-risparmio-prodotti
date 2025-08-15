@@ -1,0 +1,34 @@
+﻿chains:
+  md:
+    adapter: md
+    stores:
+      - city: "Torre del Greco"
+        url: "https://www.mdspa.it/volantini"         # SOSTITUISCI con pagina volantino del tuo store
+  eurospin:
+    adapter: eurospin
+    stores:
+      - city: "Portici"
+        url: "https://www.eurospin.it/volantino/"     # SOSTITUISCI
+  deco:
+    adapter: deco
+    stores:
+      - city: "Ercolano"
+        url: "https://www.supermercatideco.it/volantino/" # SOSTITUISCI
+  conad:
+    adapter: dynamic_html
+    config:
+      item_selector: ".product-card"                  # ESEMPIO: cambia in base al sito
+      name_selector: ".product-title"
+      price_selector: ".price"
+    stores:
+      - city: "Torre Annunziata"
+        url: "https://www.conad.it/ricerca-negozi/..." # SOSTITUISCI (pagina con prodotti/offerte)
+  lidl:
+    adapter: dynamic_html
+    config:
+      item_selector: ".product"                       # ESEMPIO: cambia in base al sito
+      name_selector: ".title"
+      price_selector: ".pricebox__price"
+    stores:
+      - city: "Castellammare di Stabia"
+        url: "https://www.lidl.it/offerte"            # SOSTITUISCI

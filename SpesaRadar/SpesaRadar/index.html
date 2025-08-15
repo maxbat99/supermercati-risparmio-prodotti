@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SpesaRadar — Offerte Supermercati (MVP)</title>
+  <meta name="description" content="SpesaRadar: confronta le offerte dei supermercati nell'Area Vesuviana" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif}</style>
+</head>
+<body class="bg-white text-gray-900">
+  <div class="max-w-6xl mx-auto p-4 space-y-4">
+    <header class="flex items-center justify-between">
+      <h1 class="text-2xl md:text-3xl font-semibold tracking-tight">Spesa<span class="text-blue-600">Radar</span></h1>
+      <nav class="text-sm text-gray-600">MVP Sito Statico</nav>
+    </header>
+
+    <section class="grid md:grid-cols-6 gap-2">
+      <select id="city" class="border rounded p-2">
+        <option value="">Tutte le città</option>
+      </select>
+      <select id="chain" class="border rounded p-2">
+        <option value="">Tutte le catene</option>
+      </select>
+      <input id="q" placeholder="Cerca prodotto o brand" class="border rounded p-2 md:col-span-2" />
+      <select id="sort" class="border rounded p-2">
+        <option value="unit_price">Ordina per €/kg o €/L</option>
+        <option value="price">Ordina per prezzo</option>
+        <option value="discount">Ordina per sconto</option>
+      </select>
+      <select id="order" class="border rounded p-2">
+        <option value="asc">Crescente</option>
+        <option value="desc">Decrescente</option>
+      </select>
+    </section>
+
+    <section class="flex items-center gap-2">
+      <label class="text-sm">Valide il:</label>
+      <input id="validOn" type="date" class="border rounded p-2" />
+      <button id="reset" class="ml-auto border rounded px-3 py-1 text-sm">Reset filtri</button>
+      <div id="count" class="text-sm text-gray-600"></div>
+    </section>
+
+    <section id="grid" class="grid md:grid-cols-3 gap-3"></section>
+
+    <footer class="text-xs text-gray-500 pt-6">© <span id="year"></span> SpesaRadar — "Trova l'offerta giusta, al volo."</footer>
+  </div>
+
+  <script>
+    // --- Dati mock (sostituibili più avanti con API reali) ---
+    const DATA = [
+      { id: "md-001", canonical_id: "pasta_barilla_spaghetti_500g", product_name: "Spaghetti n.5 Barilla 500 g", brand: "Barilla", category: "Pasta", quantity: "500 g", unit_price: 2.18, price: 1.09, currency: "EUR", discount_pct: 30, valid_from: "2025-08-14", valid_to: "2025-08-21", chain: "MD", store_city: "Torre del Greco", store_address: "Via Nazionale 123", source_url: "#", source_type: "leaflet" },
+      { id: "lidl-002", canonical_id: "pasta_barilla_spaghetti_500g", product_name: "Barilla Spaghetti 500g", brand: "Barilla", category: "Pasta", quantity: "500 g", unit_price: 1.98, price: 0.99, currency: "EUR", discount_pct: 34, valid_from: "2025-08-15", valid_to: "2025-08-22", chain: "Lidl", store_city: "Portici", store_address: "Corso Garibaldi 45", source_url: "#", source_type: "site" },
+      { id: "deco-003", canonical_id: "latte_parmalat_uht_1l", product_name: "Latte UHT Parmalat 1L", brand: "Parmalat", category: "Latticini", quantity: "1 L", unit_price: 1.25, price: 1.25, currency: "EUR", discount_pct: 0, valid_from: "2025-08-13", valid_to: "2025-08-20", chain: "Decò", store_city: "Ercolano", store_address: "Via IV Novembre 12", source_url: "#", source_type: "leaflet" },
+      { id: "eurospin-004", canonical_id: "tonno_riomare_naturale_3x80g", product_name: "Tonno Rio Mare al naturale 3x80g", brand: "Rio Mare", category: "Conserve", quantity: "3x80 g", unit_price: 9.58, price: 2.30, currency: "EUR", discount_pct: 40, valid_from: "2025-08-15", valid_to: "2025-08-25", chain: "Eurospin", store_city: "Torre Annunziata", store_address: "Via Vesuvio 9", source_url: "#", source_type: "site" },
+      { id: "sole365-005", canonical_id: "pasta_barilla_spaghetti_500g", product_name: "Spaghetti Barilla 500 g", brand: "Barilla", category: "Pasta", quantity: "500 g", unit_price: 2.40, price: 1.20, currency: "EUR", discount_pct: 25, valid_from: "2025-08-10", valid_to: "2025-08-19", chain: "Sole365", store_city: "Castellammare di Stabia", store_address: "Via Roma 77", source_url: "#", source_type: "leaflet" }
+    ];
+
+    const $ = (id) => document.getElementById(id);
+    const city = $("city"), chain = $("chain"), q = $("q"), sort = $("sort"), order = $("order"), validOn = $("validOn"), grid = $("grid"), count = $("count"), resetBtn = $("reset");
+
+    // Init selects
+    const unique = (arr) => Array.from(new Set(arr)).sort();
+    const cities = unique(DATA.map(o => o.store_city));
+    const chains = unique(DATA.map(o => o.chain));
+    cities.forEach(c => city.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`));
+    chains.forEach(c => chain.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`));
+    $("year").textContent = new Date().getFullYear();
+    validOn.value = new Date().toISOString().slice(0,10);
+
+    function like(s, sub){ return (s||"").toLowerCase().includes((sub||"").toLowerCase()); }
+    function inRange(d, from, to){ if(!d||!from||!to) return true; const x = new Date(d), a=new Date(from), b=new Date(to); return x>=a && x<=b; }
+
+    function apply(){
+      let items = DATA.slice();
+      if (city.value) items = items.filter(o => o.store_city === city.value);
+      if (chain.value) items = items.filter(o => o.chain === chain.value);
+      if (q.value) items = items.filter(o => like(o.product_name, q.value) || like(o.brand, q.value));
+      if (validOn.value) items = items.filter(o => inRange(validOn.value, o.valid_from, o.valid_to));
+
+      const s = sort.value; const rev = order.value === 'desc';
+      items.sort((a,b)=>{
+        const av = (a[s]??Infinity), bv=(b[s]??Infinity);
+        return rev ? (bv-av) : (av-bv);
+      });
+
+      count.textContent = `${items.length} risultati`;
+      grid.innerHTML = items.map(o => card(o)).join("");
+    }
+
+    function card(o){
+      const up = (o.unit_price!=null) ? `(${o.unit_price.toFixed(2)} €/unità)` : "";
+      return `
+        <article class="border rounded-2xl p-3 shadow-sm hover:shadow transition">
+          <div class="flex justify-between items-start">
+            <h3 class="font-medium leading-snug pr-2">${o.product_name}</h3>
+            <span class="text-xs bg-gray-100 rounded px-2 py-1">${o.chain}</span>
+          </div>
+          <div class="text-sm text-gray-600">${o.brand||""}${o.brand&&o.quantity?" • ":""}${o.quantity||""}</div>
+          <div class="mt-2 flex items-baseline gap-2">
+            <div class="text-2xl font-semibold">€${o.price.toFixed(2)}</div>
+            <div class="text-xs text-gray-600">${up}</div>
+            ${o.discount_pct!=null?`<div class="ml-auto text-xs bg-green-100 text-green-700 rounded px-2 py-1">-${o.discount_pct}%</div>`:""}
+          </div>
+          <div class="text-xs text-gray-600 mt-1">${o.store_city}${o.store_address?` • ${o.store_address}`:""}</div>
+          <div class="text-xs text-gray-500">${new Date(o.valid_from).toLocaleDateString()} ➜ ${new Date(o.valid_to).toLocaleDateString()}</div>
+          <div class="mt-2 flex gap-2">
+            <a class="text-xs underline" href="#" onclick="compare('${o.canonical_id}');return false">Confronta catene</a>
+            ${o.source_url?`<a class="text-xs underline" href="${o.source_url}" target="_blank">Fonte</a>`:""}
+          </div>
+        </article>`;
+    }
+
+    function compare(cid){
+      const rows = DATA.filter(x=>x.canonical_id===cid).sort((a,b)=> (a.unit_price??Infinity)-(b.unit_price??Infinity));
+      if (!rows.length) return;
+      const lines = rows.map(r=>`${r.chain} @ ${r.store_city}: €${r.price.toFixed(2)} ${r.unit_price!=null?`(${r.unit_price.toFixed(2)} €/unità)`:''}`).join('\n');
+      alert(`Confronto offerte per ${cid}:\n\n${lines}`);
+    }
+
+    [city, chain, q, sort, order, validOn].forEach(el=> el.addEventListener('input', apply));
+    resetBtn.addEventListener('click', ()=>{ city.value=""; chain.value=""; q.value=""; sort.value="unit_price"; order.value="asc"; validOn.value=new Date().toISOString().slice(0,10); apply(); });
+
+    apply();
+  </script>
+</body>
+</html>

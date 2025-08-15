@@ -1,0 +1,384 @@
+﻿<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Spesa Semplice</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root{--fg:#111827;--muted:#6b7280}
+  body{font-family:system-ui,Inter,Arial;background:#fff;color:var(--fg)}
+  .box{border:2px solid #e5e7eb;border-radius:18px;padding:16px;background:#fff}
+  .btn{display:inline-flex;align-items:center;justify-content:center;border:2px solid #d1d5db;border-radius:14px;padding:.7rem 1rem;font-size:1.05rem;font-weight:700}
+  .btn:active{transform:scale(.99)}
+  .btn-ok{border-color:#bbf7d0;background:#dcfce7}
+  .btn-primary{border-color:#bfdbfe;background:#dbeafe}
+  .btn-danger{border-color:#fecaca;background:#fee2e2}
+  .inp{border:2px solid #d1d5db;border-radius:14px;padding:.8rem 1rem;font-size:1.1rem}
+  .title{font-size:1.7rem;font-weight:800}
+  .step{font-size:1.2rem;font-weight:800}
+  .price{font-size:1.5rem;font-weight:900}
+  .muted{color:var(--muted)}
+  .store{font-size:1rem;color:#065f46;background:#ecfdf5;border:1px solid #d1fae5;border-radius:999px;padding:.15rem .6rem}
+  .grid{display:grid;gap:.75rem}
+  .grid-2{grid-template-columns:1fr}
+  @media(min-width:900px){ .grid-2{grid-template-columns:1fr 1fr} }
+  .switch{position:relative;display:inline-block;width:54px;height:28px}
+  .switch input{opacity:0;width:0;height:0}
+  .slider{position:absolute;cursor:pointer;inset:0;background:#e5e7eb;border-radius:99px;transition:.2s}
+  .slider:before{position:absolute;content:"";height:22px;width:22px;left:3px;top:3px;background:white;border-radius:50%;transition:.2s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+  input:checked + .slider{background:#86efac}
+  input:checked + .slider:before{transform:translateX(26px)}
+  .pill{border:2px solid #e5e7eb;border-radius:999px;padding:.45rem .75rem;display:inline-flex;align-items:center;gap:.5rem}
+</style>
+<script>
+  // ===== CONFIG =====
+  let API_BASE = "http://127.0.0.1:8000";      // verrà rilevata o impostata dall'utente
+  const $ = (id)=>document.getElementById(id);
+  const € = (n)=>"€"+Number(n||0).toFixed(2);
+  const norm = (s)=>(s||"").toLowerCase().replace(/\s+/g," ").trim();
+  const todayISO = ()=> new Date().toISOString().slice(0,10);
+
+  // Città predefinite
+  const DEFAULT_CITIES = ["Torre del Greco","Portici","Ercolano","Torre Annunziata","Castellammare di Stabia"];
+  function getMyCities(){ try{ const s=localStorage.getItem("MY_CITIES"); if(s) return JSON.parse(s);}catch{} return [...DEFAULT_CITIES]; }
+  function setMyCities(arr){ localStorage.setItem("MY_CITIES", JSON.stringify(arr)); }
+  function isCityFilterOn(){ return localStorage.getItem("CITY_FILTER_ENABLED") !== "false"; }
+  function setCityFilterOn(v){ localStorage.setItem("CITY_FILTER_ENABLED", v ? "true" : "false"); }
+
+  // Auto-detect API locali
+  async function autoDetectApi(){
+    for(let p=8000;p<=8010;p++){
+      try{ const r=await fetch(`http://127.0.0.1:${p}/health`); if(r.ok) return `http://127.0.0.1:${p}`; }catch(e){}
+    }
+    return null;
+  }
+  async function initApi(){
+    const saved = localStorage.getItem("PUBLIC_API_BASE");
+    if(saved){ API_BASE = saved; return; }
+    const det = await autoDetectApi();
+    if(det){ API_BASE = det; return; }
+    $("apiPanel").style.display="block";
+  }
+  function saveApi(){
+    const v = ($("apiInput").value||"").trim(); if(!v) return;
+    localStorage.setItem("PUBLIC_API_BASE", v); API_BASE = v; $("apiPanel").style.display="none"; searchNow();
+  }
+
+  async function jget(u){ const r=await fetch(u); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+
+  // ===== STATO =====
+  const state = { groups:{}, cart:{} }; // cart[id] = {id,name,chain,price,qty,store_city,store_address}
+
+  // ===== MAPPE =====
+  function storeQuery(o){
+    const parts=[]; if(o.store_address) parts.push(o.store_address); if(o.store_city) parts.push(o.store_city); if(o.chain) parts.push(o.chain);
+    if(!parts.length && o.chain) parts.push(o.chain); return parts.join(", ");
+  }
+  const mapsPlaceUrl = (q)=> "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(q);
+  const mapsDirUrl   = (dst)=> "https://www.google.com/maps/dir/?api=1&destination="+encodeURIComponent(dst);
+  function mapsMultiStopUrl(d){ if(!d.length) return "#"; const dest=d[0], wp=d.slice(1); return "https://www.google.com/maps/dir/?api=1&destination="+encodeURIComponent(dest)+(wp.length?("&waypoints="+encodeURIComponent(wp.join("|"))):""); }
+
+  // ===== RICERCA =====
+  async function searchNow(){
+    if(!API_BASE){ $("results").innerHTML = `<div class="muted">Imposta l'indirizzo dell'API qui sotto.</div>`; return; }
+    const q = ($("q").value||"").trim();
+    const p = new URLSearchParams({ sort:"price", order:"asc", page_size:"200",  });
+    if(q) p.set("q", q);
+
+    $("count").textContent = "Sto cercando…";
+    try{
+      const data = await jget(API_BASE + "/offers?" + p.toString());
+      let items = data.items || [];
+      // filtro città lato client
+      
+      // raggruppo per prodotto
+      const groups = {};
+      for(const it of items){ (groups[norm(it.product_name)] ||= []).push(it); }
+      Object.values(groups).forEach(arr => arr.sort((a,b)=>a.price-b.price));
+      state.groups = groups;
+      renderResults();
+    }catch(e){
+      $("results").innerHTML = `<div class="muted">Errore nel collegamento all'API.</div>`;
+      $("count").textContent = "";
+    }
+  }
+
+  function renderResults(){
+    const groups = Object.values(state.groups);
+    groups.sort((a,b)=>(a[0]?.price||0)-(b[0]?.price||0));
+    $("count").textContent = groups.length ? `${groups.length} prodotti trovati` : "Nessun prodotto";
+
+    $("results").innerHTML = groups.map(arr=>{
+      const best = arr[0]; const others = arr.slice(1);
+      const q = storeQuery(best);
+      return `
+        <div class="box">
+          <div style="display:flex;gap:12px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap">
+            <div style="max-width:65%">
+              <div class="step">2. Scegli</div>
+              <div class="title" style="margin:.25rem 0;">${best.product_name}</div>
+              <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+                <span class="store">${best.chain}${best.store_city?` — ${best.store_city}`:""}</span>
+                ${q?`<a class="btn" href="${mapsPlaceUrl(q)}" target="_blank" rel="noopener">Mappa</a>`:""}
+              </div>
+              <div style="display:flex;gap:16px;align-items:baseline;margin-top:.5rem">
+                <div class="price">${€(best.price)}</div>
+                ${best.unit_price!=null?`<div class="muted">(€ ${Number(best.unit_price).toFixed(2)} / unità)</div>`:""}
+              </div>
+            </div>
+            <div class="grid" style="min-width:210px">
+              <div style="display:flex;gap:8px">
+                <input id="qty-${best.id}" class="inp" type="number" min="1" value="1" style="width:90px;text-align:center">
+                <button class="btn btn-ok" onclick="addToCart('${best.id}', ${best.price}, '${escapeHtml(best.product_name)}', '${escapeHtml(best.chain)}', '${escapeHtml(best.store_city||"")}', '${escapeHtml(best.store_address||"")}')">Aggiungi</button>
+              </div>
+              ${others.length?`<button class="btn" onclick="showOthers('${escapeHtml(best.product_name)}')">Altri prezzi (${others.length})</button>`:""}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("") || `<div class="muted">Scrivi ad esempio: latte, pasta, olio…</div>`;
+  }
+
+  function showOthers(prodName){
+    const key = norm(prodName);
+    const arr = state.groups[key]||[];
+    if(!arr.length) return;
+    const html = arr.map(o=>{
+      const q = storeQuery(o);
+      return `
+        <div style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #eee;padding:.5rem 0;align-items:center;flex-wrap:wrap">
+          <div>
+            <div style="font-weight:700">${o.chain}${o.store_city?` — ${o.store_city}`:""}</div>
+            <div class="muted">${o.quantity||""}</div>
+            ${q?`<a class="btn btn-primary" href="${mapsPlaceUrl(q)}" target="_blank" rel="noopener">Mappa</a>`:""}
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="price" style="font-size:1.2rem">${€(o.price)}</div>
+            <input id="qty-${o.id}" class="inp" type="number" min="1" value="1" style="width:80px;text-align:center">
+            <button class="btn btn-ok" onclick="addToCart('${o.id}', ${o.price}, '${escapeHtml(o.product_name)}', '${escapeHtml(o.chain)}', '${escapeHtml(o.store_city||"")}', '${escapeHtml(o.store_address||"")}')">Aggiungi</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+    showModal(prodName, html);
+  }
+
+  // ===== CARRELLO =====
+  function addToCart(id, price, name, chain, city, address){
+    const qtyEl = document.getElementById("qty-"+id);
+    const qty = Math.max(1, Number(qtyEl?.value||1));
+    if(!state.cart[id]) state.cart[id] = { id, name:unescapeHtml(name), chain:unescapeHtml(chain), store_city:unescapeHtml(city), store_address:unescapeHtml(address), price:Number(price), qty:0 };
+    state.cart[id].qty += qty; persistCart(); renderCart();
+    try{ document.getElementById("cart").scrollIntoView({behavior:"smooth"});}catch{}
+  }
+  function setQty(id, val){ if(!state.cart[id]) return; state.cart[id].qty = Math.max(1, Number(val||1)); persistCart(); renderCart(); }
+  function changeQty(id, d){ if(!state.cart[id]) return; state.cart[id].qty = Math.max(1, state.cart[id].qty + d); persistCart(); renderCart(); }
+  function removeItem(id){ if(!state.cart[id]) return; delete state.cart[id]; persistCart(); renderCart(); }
+  function persistCart(){ localStorage.setItem("CART", JSON.stringify(state.cart)); }
+  function loadCart(){ try{ state.cart = JSON.parse(localStorage.getItem("CART")||"{}"); }catch{ state.cart = {}; } }
+
+  function renderCart(){
+    const items = Object.values(state.cart);
+    const wrap = $("cartItems");
+    if(!items.length){ wrap.innerHTML = `<div class="muted">Carrello vuoto</div>`; $("total").textContent = €(0); $("routeAll").style.display="none"; $("packs").innerHTML=""; return; }
+
+    wrap.innerHTML = items.map(it=>`
+      <div style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #eee;padding:.5rem 0;align-items:center;flex-wrap:wrap">
+        <div style="flex:1">
+          <div style="font-weight:700">${escapeHtml(it.name)}</div>
+          <div class="muted">${escapeHtml(it.chain)}${it.store_city?` — ${escapeHtml(it.store_city)}`:""}</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="btn" onclick="changeQty('${it.id}',-1)">−</button>
+          <input class="inp" style="width:90px;text-align:center" type="number" min="1" value="${it.qty}" onchange="setQty('${it.id}', this.value)">
+          <button class="btn" onclick="changeQty('${it.id}',1)">＋</button>
+        </div>
+        <div class="price" style="font-size:1.2rem">${€(it.price * it.qty)}</div>
+        <button class="btn btn-danger" onclick="removeItem('${it.id}')">✕</button>
+      </div>
+    `).join("");
+
+    const total = items.reduce((s,it)=>s+it.price*it.qty,0);
+    $("total").textContent = €(total);
+
+    // Pacchetti per supermercato
+    const per = {}; for(const it of items){ (per[it.chain] ||= []).push(it); }
+    const dests = [];
+    $("packs").innerHTML = Object.entries(per).map(([chain,list])=>{
+      const q = storeQuery({chain, store_city:list[0]?.store_city, store_address:list[0]?.store_address});
+      if(q) dests.push(q);
+      const sum = list.reduce((s,x)=>s+x.price*x.qty,0);
+      const rows = list.map(x=>`<div style="display:flex;justify-content:space-between"><div>${escapeHtml(x.name)} × ${x.qty}</div><div class="muted">${€(x.price*x.qty)}</div></div>`).join("");
+      return `
+        <div class="box">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="title" style="font-size:1.2rem">${escapeHtml(chain)}</div>
+            <div class="price" style="font-size:1.2rem">${€(sum)}</div>
+          </div>
+          <div style="margin:.5rem 0">${rows}</div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+            ${q?`<a class="btn btn-primary" target="_blank" rel="noopener" href="${mapsDirUrl(q)}">Portami al negozio</a>`:""}
+            <button class="btn" onclick="exportStore('${escapeHtml(chain)}')">Esporta lista</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    if(dests.length>=2){ $("routeAll").style.display="inline-flex"; $("routeAll").href = mapsMultiStopUrl(dests); }
+    else { $("routeAll").style.display="none"; }
+  }
+
+  // Export CSV
+  function exportAll(){
+    const items = Object.values(state.cart); if(!items.length) return;
+    const header = ["prodotto","quantita","prezzo_unitario","totale","supermercato","citta","indirizzo"];
+    const lines = [header.join(",")].concat(items.map(it=>{
+      const row=[it.name,it.qty,it.price,(it.price*it.qty),it.chain,it.store_city||"",it.store_address||""].map(v=>`"${String(v).replaceAll('"','""')}"`);
+      return row.join(",");
+    }));
+    const blob = new Blob([lines.join("\n")],{type:"text/csv"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="carrello_completo.csv"; a.click(); URL.revokeObjectURL(a.href);
+  }
+  function exportStore(chain){
+    const items = Object.values(state.cart).filter(x=>x.chain===chain); if(!items.length) return;
+    const header = ["prodotto","quantita","prezzo_unitario","totale","supermercato","citta","indirizzo"];
+    const lines = [header.join(",")].concat(items.map(it=>{
+      const row=[it.name,it.qty,it.price,(it.price*it.qty),it.chain,it.store_city||"",it.store_address||""].map(v=>`"${String(v).replaceAll('"','""')}"`);
+      return row.join(",");
+    }));
+    const blob = new Blob([lines.join("\n")],{type:"text/csv"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`lista_${chain}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  }
+  function clearCart(){ if(!confirm("Vuoi svuotare tutto il carrello?")) return; state.cart={}; persistCart(); renderCart(); }
+
+  // Aiuto + città
+  function showHelp(){
+    showModal("Come si usa", `
+      <div class="box"><b>1. Cerca</b> scrivi "latte" oppure tocca il microfono e parla.</div>
+      <div class="box"><b>2. Scegli</b> il prezzo più basso e premi <b>Aggiungi</b>.</div>
+      <div class="box"><b>3. Vai al negozio</b> dal carrello, <b>Portami al negozio</b> (Google Maps).</div>
+    `);
+  }
+  function openCities(){
+    const cities = getMyCities(); const on = isCityFilterOn();
+    showModal("Città", `
+      <div style="display:flex;gap:1rem;align-items:center;margin-bottom:.5rem">
+        <label class="switch"><input type="checkbox" ${on?"checked":""} id="cityOn"><span class="slider"></span></label>
+        <span>Mostra solo le mie città</span>
+      </div>
+      <div id="cityWrap" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.5rem">
+        ${cities.map(c=>`<label class="pill"><input type="checkbox" class="cityChk" value="${c}" checked> <span>${c}</span></label>`).join("")}
+      </div>
+      <div style="margin-top:.75rem;display:flex;gap:.5rem">
+        <button class="btn" onclick="addCity()">+ Aggiungi città</button>
+        <button class="btn" onclick="resetCities()">Ripristina</button>
+      </div>
+    `);
+    $("cityOn").onchange = (e)=>{ setCityFilterOn(e.target.checked); searchNow(); };
+    document.querySelectorAll(".cityChk").forEach(chk=>{
+      chk.onchange = ()=>{
+        const now = Array.from(document.querySelectorAll(".cityChk")).filter(x=>x.checked).map(x=>x.value);
+        setMyCities(now); searchNow();
+      };
+    });
+  }
+  function addCity(){ const v=prompt("Scrivi la città:",""); if(!v) return; const l=getMyCities(); if(!l.includes(v)) l.push(v); setMyCities(l); openCities(); searchNow(); }
+  function resetCities(){ setMyCities([...DEFAULT_CITIES]); setCityFilterOn(true); openCities(); searchNow(); }
+
+  // Microfono
+  let recog = null;
+  function voiceStart(){
+    try{
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if(!SR) { alert("Microfono non supportato su questo dispositivo."); return; }
+      recog = new SR(); recog.lang="it-IT"; recog.interimResults=false; recog.maxAlternatives=1;
+      recog.onresult = (e)=>{ const txt = e.results[0][0].transcript || ""; $("q").value = txt; searchNow(); };
+      recog.onerror=()=>{}; recog.start();
+    }catch{ alert("Impossibile usare il microfono."); }
+  }
+
+  // Modal
+  function showModal(title, html){ $("mTitle").textContent = title; $("mBody").innerHTML = html; $("modal").classList.add("show"); }
+  function closeModal(){ $("modal").classList.remove("show"); }
+  function escapeHtml(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function unescapeHtml(s){ const t=document.createElement("textarea"); t.innerHTML=s; return t.value; }
+
+  // Avvio
+  window.addEventListener("DOMContentLoaded", async ()=>{
+    await initApi();
+    loadCart(); renderCart();
+    $("q").addEventListener("keydown",(e)=>{ if(e.key==="Enter") searchNow(); });
+    searchNow();
+  });
+</script>
+</head>
+<body>
+  <div style="max-width:1100px;margin:0 auto;padding:16px 16px 80px;">
+    <header style="display:flex;justify-content:space-between;gap:.75rem;flex-wrap:wrap;align-items:center">
+      <div class="title">Spesa Semplice</div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <a id="routeAll" class="btn" style="display:none" target="_blank" rel="noopener">Percorso tutti i negozi</a>
+        <button class="btn" onclick="openCities()">Città</button>
+        <button class="btn" onclick="showHelp()">Aiuto</button>
+      </div>
+    </header>
+
+    <section class="box" style="margin-top:12px">
+      <div class="step">1. Cerca</div>
+      <div style="display:flex;gap:.5rem;margin-top:.5rem">
+        <input id="q" class="inp" placeholder="Scrivi cosa ti serve (es. latte, pasta, olio…)" style="flex:1">
+        <button class="btn btn-primary" onclick="searchNow()">Cerca</button>
+        <button class="btn btn-primary" onclick="voiceStart()" title="Parla">🎤</button>
+      </div>
+      <div id="apiPanel" style="display:none;margin-top:.5rem;gap:.5rem" class="grid">
+        <div class="muted">Indirizzo APP (API):</div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <input id="apiInput" class="inp" placeholder="http://127.0.0.1:8000" style="flex:1;min-width:260px">
+          <button class="btn" onclick="saveApi()">Salva</button>
+        </div>
+      </div>
+    </section>
+
+    <section style="margin-top:12px">
+      <div class="muted" id="count">—</div>
+      <div id="results" class="grid grid-2" style="margin-top:.5rem"></div>
+    </section>
+
+    <section id="cart" class="box" style="margin-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap">
+        <div class="step">3. Vai al negozio</div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button class="btn" onclick="exportAll()">Esporta tutto</button>
+          <button class="btn btn-danger" onclick="clearCart()">Svuota carrello</button>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:.5rem">
+        <div class="title" style="font-size:1.25rem">Totale</div>
+        <div id="total" class="price">€0,00</div>
+      </div>
+      <div id="cartItems" style="margin-top:.5rem"></div>
+    </section>
+
+    <section style="margin-top:12px">
+      <div class="title" style="font-size:1.25rem;margin-bottom:.25rem">Pacchetti per supermercato</div>
+      <div id="packs" class="grid"></div>
+    </section>
+  </div>
+
+  <div id="modal" class="modal" onclick="if(event.target.id==='modal') closeModal()" style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:1rem">
+    <div class="box" style="max-width:860px;width:100%;max-height:85vh;overflow:auto;background:#fff">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+        <div id="mTitle" class="title" style="font-size:1.25rem">Titolo</div>
+        <button class="btn" onclick="closeModal()">Chiudi</button>
+      </div>
+      <div id="mBody" class="muted"></div>
+    </div>
+  </div>
+</body>
+</html>
+
+
+
+
+
+

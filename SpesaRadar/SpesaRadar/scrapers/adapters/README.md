@@ -1,0 +1,1 @@
+Adapter per catene (MD, Eurospin, Decò, Conad, Lidl) — da implementare.

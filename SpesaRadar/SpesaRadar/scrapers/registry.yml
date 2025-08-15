@@ -1,0 +1,4 @@
+chains:
+  md:
+    kind: leaflet_pdf
+    stores: []
