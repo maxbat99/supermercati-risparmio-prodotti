@@ -1,6 +1,7 @@
-﻿[build]
+[build]
   publish = "site"
   command = ""
+
 [headers]
   for = "/*"
   [headers.values]
