@@ -30,19 +30,21 @@
   input:checked + .slider{background:#86efac}
   input:checked + .slider:before{transform:translateX(26px)}
   .pill{border:2px solid #e5e7eb;border-radius:999px;padding:.45rem .75rem;display:inline-flex;align-items:center;gap:.5rem}
-#modal.show{display:flex}
+  #modal.show{display:flex}
 </style>
 <script>
   // ===== CONFIG =====
   let API_BASE = (location.hostname === "127.0.0.1" || location.hostname === "localhost")
   ? "http://127.0.0.1:8000"
-  : "https://supermercati-risparmio-prodotti.onrender.com";      // verrÃƒÂ  rilevata o impostata dall'utente
+  : "https://supermercati-risparmio-prodotti.onrender.com";      // verrà rilevata o impostata dall'utente
+
   const $ = (id)=>document.getElementById(id);
-  const Ã¢â€šÂ¬ = (n)=>"Ã¢â€šÂ¬"+Number(n||0).toFixed(2);
+  const EURO = "€";
+  const euro = (n)=>EURO + Number(n||0).toFixed(2);
   const norm = (s)=>(s||"").toLowerCase().replace(/\s+/g," ").trim();
   const todayISO = ()=> new Date().toISOString().slice(0,10);
 
-  // CittÃƒÂ  predefinite
+  // Città predefinite
   const DEFAULT_CITIES = ["Torre del Greco","Portici","Ercolano","Torre Annunziata","Castellammare di Stabia"];
   function getMyCities(){ try{ const s=localStorage.getItem("MY_CITIES"); if(s) return JSON.parse(s);}catch{} return [...DEFAULT_CITIES]; }
   function setMyCities(arr){ localStorage.setItem("MY_CITIES", JSON.stringify(arr)); }
@@ -86,15 +88,25 @@
   async function searchNow(){
     if(!API_BASE){ $("results").innerHTML = `<div class="muted">Imposta l'indirizzo dell'API qui sotto.</div>`; return; }
     const q = ($("q").value||"").trim();
-    const p = new URLSearchParams({ sort:"price", order:"asc", page_size:"200",  });
+    const p = new URLSearchParams({ sort:"price", order:"asc", page_size:"200" });
     if(q) p.set("q", q);
 
-    $("count").textContent = "Sto cercandoÃ¢â‚¬Â¦";
+    $("count").textContent = "Sto cercando…";
     try{
       const data = await jget(API_BASE + "/offers?" + p.toString());
       let items = data.items || [];
-      // filtro cittÃƒÂ  lato client
-      
+
+      // filtro città lato client
+      try {
+        if (isCityFilterOn()) {
+          const allowed = new Set(getMyCities().map(norm));
+          items = items.filter(it => {
+            const c = norm(it.store_city || "");
+            return !c || allowed.has(c);
+          });
+        }
+      } catch(e) {}
+
       // raggruppo per prodotto
       const groups = {};
       for(const it of items){ (groups[norm(it.product_name)] ||= []).push(it); }
@@ -122,25 +134,25 @@
               <div class="step">2. Scegli</div>
               <div class="title" style="margin:.25rem 0;">${best.product_name}</div>
               <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-                <span class="store">${best.chain}${best.store_city?` Ã¢â‚¬â€ ${best.store_city}`:""}</span>
+                <span class="store">${best.chain}${best.store_city?` — ${best.store_city}`:""}</span>
                 ${q?`<a class="btn" href="${mapsPlaceUrl(q)}" target="_blank" rel="noopener">Mappa</a>`:""}
               </div>
               <div style="display:flex;gap:16px;align-items:baseline;margin-top:.5rem">
-                <div class="price">${Ã¢â€šÂ¬(best.price)}</div>
-                ${best.unit_price!=null?`<div class="muted">(Ã¢â€šÂ¬ ${Number(best.unit_price).toFixed(2)} / unitÃƒÂ )</div>`:""}
+                <div class="price">${euro(best.price)}</div>
+                ${best.unit_price!=null?`<div class="muted">(€ ${Number(best.unit_price).toFixed(2)} / unità)</div>`:""}
               </div>
             </div>
             <div class="grid" style="min-width:210px">
               <div style="display:flex;gap:8px">
                 <input id="qty-${best.id}" class="inp" type="number" min="1" value="1" style="width:90px;text-align:center">
-                <button class="btn btn-ok" onclick="addToCart('${best.id}', ${best.price}, '${escapeHtml(best.product_name)}', '${escapeHtml(best.chain)}', '${escapeHtml(best.store_city||"")}', '${escapeHtml(best.store_address||"")}')">Aggiungi</button>
+                <button class="btn btn-ok" onclick="addToCart(${JSON.stringify(best.id)}, ${Number(best.price)}, ${JSON.stringify(best.product_name)}, ${JSON.stringify(best.chain)}, ${JSON.stringify(best.store_city||"")}, ${JSON.stringify(best.store_address||"")})">Aggiungi</button>
               </div>
-              ${others.length?`<button class="btn" onclick="showOthers('${escapeHtml(best.product_name)}')">Altri prezzi (${others.length})</button>`:""}
+              ${others.length?`<button class="btn" onclick="showOthers(${JSON.stringify(best.product_name)})">Altri prezzi (${others.length})</button>`:""}
             </div>
           </div>
         </div>
       `;
-    }).join("") || `<div class="muted">Scrivi ad esempio: latte, pasta, olioÃ¢â‚¬Â¦</div>`;
+    }).join("") || `<div class="muted">Scrivi ad esempio: latte, pasta, olio…</div>`;
   }
 
   function showOthers(prodName){
@@ -152,14 +164,14 @@
       return `
         <div style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #eee;padding:.5rem 0;align-items:center;flex-wrap:wrap">
           <div>
-            <div style="font-weight:700">${o.chain}${o.store_city?` Ã¢â‚¬â€ ${o.store_city}`:""}</div>
+            <div style="font-weight:700">${o.chain}${o.store_city?` — ${o.store_city}`:""}</div>
             <div class="muted">${o.quantity||""}</div>
             ${q?`<a class="btn btn-primary" href="${mapsPlaceUrl(q)}" target="_blank" rel="noopener">Mappa</a>`:""}
           </div>
           <div style="display:flex;gap:8px;align-items:center">
-            <div class="price" style="font-size:1.2rem">${Ã¢â€šÂ¬(o.price)}</div>
+            <div class="price" style="font-size:1.2rem">${euro(o.price)}</div>
             <input id="qty-${o.id}" class="inp" type="number" min="1" value="1" style="width:80px;text-align:center">
-            <button class="btn btn-ok" onclick="addToCart('${o.id}', ${o.price}, '${escapeHtml(o.product_name)}', '${escapeHtml(o.chain)}', '${escapeHtml(o.store_city||"")}', '${escapeHtml(o.store_address||"")}')">Aggiungi</button>
+            <button class="btn btn-ok" onclick="addToCart(${JSON.stringify(o.id)}, ${Number(o.price)}, ${JSON.stringify(o.product_name)}, ${JSON.stringify(o.chain)}, ${JSON.stringify(o.store_city||"")}, ${JSON.stringify(o.store_address||"")})">Aggiungi</button>
           </div>
         </div>
       `;
@@ -171,7 +183,7 @@
   function addToCart(id, price, name, chain, city, address){
     const qtyEl = document.getElementById("qty-"+id);
     const qty = Math.max(1, Number(qtyEl?.value||1));
-    if(!state.cart[id]) state.cart[id] = { id, name:unescapeHtml(name), chain:unescapeHtml(chain), store_city:unescapeHtml(city), store_address:unescapeHtml(address), price:Number(price), qty:0 };
+    if(!state.cart[id]) state.cart[id] = { id, name, chain, store_city:city, store_address:address, price:Number(price), qty:0 };
     state.cart[id].qty += qty; persistCart(); renderCart();
     try{ document.getElementById("cart").scrollIntoView({behavior:"smooth"});}catch{}
   }
@@ -184,26 +196,26 @@
   function renderCart(){
     const items = Object.values(state.cart);
     const wrap = $("cartItems");
-    if(!items.length){ wrap.innerHTML = `<div class="muted">Carrello vuoto</div>`; $("total").textContent = Ã¢â€šÂ¬(0); $("routeAll").style.display="none"; $("packs").innerHTML=""; return; }
+    if(!items.length){ wrap.innerHTML = `<div class="muted">Carrello vuoto</div>`; $("total").textContent = euro(0); $("routeAll").style.display="none"; $("packs").innerHTML=""; return; }
 
     wrap.innerHTML = items.map(it=>`
       <div style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #eee;padding:.5rem 0;align-items:center;flex-wrap:wrap">
         <div style="flex:1">
           <div style="font-weight:700">${escapeHtml(it.name)}</div>
-          <div class="muted">${escapeHtml(it.chain)}${it.store_city?` Ã¢â‚¬â€ ${escapeHtml(it.store_city)}`:""}</div>
+          <div class="muted">${escapeHtml(it.chain)}${it.store_city?` — ${escapeHtml(it.store_city)}`:""}</div>
         </div>
         <div style="display:flex;gap:6px;align-items:center">
-          <button class="btn" onclick="changeQty('${it.id}',-1)">Ã¢Ë†â€™</button>
+          <button class="btn" onclick="changeQty('${it.id}',-1)">−</button>
           <input class="inp" style="width:90px;text-align:center" type="number" min="1" value="${it.qty}" onchange="setQty('${it.id}', this.value)">
-          <button class="btn" onclick="changeQty('${it.id}',1)">Ã¯Â¼â€¹</button>
+          <button class="btn" onclick="changeQty('${it.id}',1)">+</button>
         </div>
-        <div class="price" style="font-size:1.2rem">${Ã¢â€šÂ¬(it.price * it.qty)}</div>
-        <button class="btn btn-danger" onclick="removeItem('${it.id}')">Ã¢Å“â€¢</button>
+        <div class="price" style="font-size:1.2rem">${euro(it.price * it.qty)}</div>
+        <button class="btn btn-danger" onclick="removeItem('${it.id}')">✕</button>
       </div>
     `).join("");
 
     const total = items.reduce((s,it)=>s+it.price*it.qty,0);
-    $("total").textContent = Ã¢â€šÂ¬(total);
+    $("total").textContent = euro(total);
 
     // Pacchetti per supermercato
     const per = {}; for(const it of items){ (per[it.chain] ||= []).push(it); }
@@ -212,12 +224,12 @@
       const q = storeQuery({chain, store_city:list[0]?.store_city, store_address:list[0]?.store_address});
       if(q) dests.push(q);
       const sum = list.reduce((s,x)=>s+x.price*x.qty,0);
-      const rows = list.map(x=>`<div style="display:flex;justify-content:space-between"><div>${escapeHtml(x.name)} Ãƒâ€” ${x.qty}</div><div class="muted">${Ã¢â€šÂ¬(x.price*x.qty)}</div></div>`).join("");
+      const rows = list.map(x=>`<div style="display:flex;justify-content:space-between"><div>${escapeHtml(x.name)} × ${x.qty}</div><div class="muted">${euro(x.price*x.qty)}</div></div>`).join("");
       return `
         <div class="box">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <div class="title" style="font-size:1.2rem">${escapeHtml(chain)}</div>
-            <div class="price" style="font-size:1.2rem">${Ã¢â€šÂ¬(sum)}</div>
+            <div class="price" style="font-size:1.2rem">${euro(sum)}</div>
           </div>
           <div style="margin:.5rem 0">${rows}</div>
           <div style="display:flex;gap:.5rem;flex-wrap:wrap">
@@ -255,26 +267,26 @@
   }
   function clearCart(){ if(!confirm("Vuoi svuotare tutto il carrello?")) return; state.cart={}; persistCart(); renderCart(); }
 
-  // Aiuto + cittÃƒÂ 
+  // Aiuto + città
   function showHelp(){
     showModal("Come si usa", `
       <div class="box"><b>1. Cerca</b> scrivi "latte" oppure tocca il microfono e parla.</div>
-      <div class="box"><b>2. Scegli</b> il prezzo piÃƒÂ¹ basso e premi <b>Aggiungi</b>.</div>
+      <div class="box"><b>2. Scegli</b> il prezzo più basso e premi <b>Aggiungi</b>.</div>
       <div class="box"><b>3. Vai al negozio</b> dal carrello, <b>Portami al negozio</b> (Google Maps).</div>
     `);
   }
   function openCities(){
     const cities = getMyCities(); const on = isCityFilterOn();
-    showModal("CittÃƒÂ ", `
+    showModal("Città", `
       <div style="display:flex;gap:1rem;align-items:center;margin-bottom:.5rem">
         <label class="switch"><input type="checkbox" ${on?"checked":""} id="cityOn"><span class="slider"></span></label>
-        <span>Mostra solo le mie cittÃƒÂ </span>
+        <span>Mostra solo le mie città</span>
       </div>
       <div id="cityWrap" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.5rem">
         ${cities.map(c=>`<label class="pill"><input type="checkbox" class="cityChk" value="${c}" checked> <span>${c}</span></label>`).join("")}
       </div>
       <div style="margin-top:.75rem;display:flex;gap:.5rem">
-        <button class="btn" onclick="addCity()">+ Aggiungi cittÃƒÂ </button>
+        <button class="btn" onclick="addCity()">+ Aggiungi città</button>
         <button class="btn" onclick="resetCities()">Ripristina</button>
       </div>
     `);
@@ -286,7 +298,7 @@
       };
     });
   }
-  function addCity(){ const v=prompt("Scrivi la cittÃƒÂ :",""); if(!v) return; const l=getMyCities(); if(!l.includes(v)) l.push(v); setMyCities(l); openCities(); searchNow(); }
+  function addCity(){ const v=prompt("Scrivi la città:",""); if(!v) return; const l=getMyCities(); if(!l.includes(v)) l.push(v); setMyCities(l); openCities(); searchNow(); }
   function resetCities(){ setMyCities([...DEFAULT_CITIES]); setCityFilterOn(true); openCities(); searchNow(); }
 
   // Microfono
@@ -304,7 +316,6 @@
   function showModal(title, html){ $("mTitle").textContent = title; $("mBody").innerHTML = html; $("modal").classList.add("show"); }
   function closeModal(){ $("modal").classList.remove("show"); }
   function escapeHtml(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
-  function unescapeHtml(s){ const t=document.createElement("textarea"); t.innerHTML=s; return t.value; }
 
   // Avvio
   window.addEventListener("DOMContentLoaded", async ()=>{
@@ -321,7 +332,7 @@
       <div class="title">Spesa Semplice</div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         <a id="routeAll" class="btn" style="display:none" target="_blank" rel="noopener">Percorso tutti i negozi</a>
-        <button class="btn" onclick="openCities()">CittÃƒÂ </button>
+        <button class="btn" onclick="openCities()">Città</button>
         <button class="btn" onclick="showHelp()">Aiuto</button>
       </div>
     </header>
@@ -329,9 +340,9 @@
     <section class="box" style="margin-top:12px">
       <div class="step">1. Cerca</div>
       <div style="display:flex;gap:.5rem;margin-top:.5rem">
-        <input id="q" class="inp" placeholder="Scrivi cosa ti serve (es. latte, pasta, olioÃ¢â‚¬Â¦)" style="flex:1">
+        <input id="q" class="inp" placeholder="Scrivi cosa ti serve (es. latte, pasta, olio…)" style="flex:1">
         <button class="btn btn-primary" onclick="searchNow()">Cerca</button>
-        <button class="btn btn-primary" onclick="voiceStart()" title="Parla">Ã°Å¸Å½Â¤</button>
+        <button class="btn btn-primary" onclick="voiceStart()" title="Parla">🎤</button>
       </div>
       <div id="apiPanel" style="display:none;margin-top:.5rem;gap:.5rem" class="grid">
         <div class="muted">Indirizzo APP (API):</div>
@@ -343,7 +354,7 @@
     </section>
 
     <section style="margin-top:12px">
-      <div class="muted" id="count">Ã¢â‚¬â€</div>
+      <div class="muted" id="count">—</div>
       <div id="results" class="grid grid-2" style="margin-top:.5rem"></div>
     </section>
 
@@ -357,7 +368,7 @@
       </div>
       <div style="display:flex;justify-content:space-between;margin-top:.5rem">
         <div class="title" style="font-size:1.25rem">Totale</div>
-        <div id="total" class="price">Ã¢â€šÂ¬0,00</div>
+        <div id="total" class="price">€0.00</div>
       </div>
       <div id="cartItems" style="margin-top:.5rem"></div>
     </section>
@@ -398,11 +409,3 @@
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
